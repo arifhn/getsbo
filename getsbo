@@ -1,0 +1,195 @@
+#!/bin/bash
+#
+# Copyright 2009 Arif Hendrawan <arif.hn@gmail.com>
+#
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License version 2, as
+# published by the Free Software Foundation
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+user_input () {
+    local in
+    eval 'echo -n " [$'$1']: "'
+    read in
+    [ -n "$in" ] && eval $1=\$in
+}
+
+get_file () {
+    local url=`cat $TMP_FILE | grep -E ";$1\$" | awk 'BEGIN {FS=";"} {print $4}'`
+    if [ "$url" == "" ]; then
+        return 0
+    fi
+    url="http://slackbuilds.org$url"
+    wget -O $TMP_FILE -q "$url"
+}
+
+parse () {
+    sbuild=`cat $TMP_FILE | grep "<p><b>Download SlackBuild" | sed -e 's/.*href="\([^"]*\)".*/\1/g'`
+    sourcen=`cat $TMP_FILE | grep "<b>Source Downloads:" | sed -e 's/.*href="\([^"]*\)".*/\1/g'`
+
+    if [ "${sourcen:0:4}" == "http" ] || [ "${sourcen:0:3}" == "ftp" ] ; then
+        echo
+        echo "SlackBuild: $sbuild"
+        echo "Source: $sourcen"
+        echo
+        echo "   [0] Download SlackBuild + Source"
+        echo "   [1] Download SlackBuild only"
+        echo "   [2] Download Source only"
+        echo "   [3] Quit"
+        echo
+        echo -n "Wat do u want ?"
+        local ans=0
+        user_input ans
+        case "$ans" in
+            0)
+            wget "$sbuild"
+            sbuildf=`echo $sbuild | sed 's/.*\///'`
+            wget "$sourcen"
+            sourcef=`echo $sourcen | sed 's/.*\///'`;;
+            1)
+            wget "$sbuild"
+            sbuildf=`echo $sbuild | sed 's/.*\///'`;;
+            2)
+            wget "$sourcen"
+            sourcef=`echo $sourcen | sed 's/.*\///'`;;
+        esac
+    else
+        source32=`cat $TMP_FILE | grep "32bit" | sed -e 's/.*href="\([^"]*\)".*/\1/g'`
+        source64=`cat $TMP_FILE | grep "64bit" | sed -e 's/.*href="\([^"]*\)".*/\1/g'`
+        echo
+        echo "SlackBuild: $sbuild"
+        echo "Source 32bit: $source32"
+        echo "Source 64bit: $source64"
+        echo
+        echo "   [0] Download SlackBuild + source 32bit"
+        echo "   [1] Download SlackBuild + source 64bit"
+        echo "   [2] Download SlackBuild only"
+        echo "   [3] Download source 32bit"
+        echo "   [4] Download source 64bit"
+        echo "   [5] Quit"
+        echo
+        echo -n "Wat do u want ?"
+        local ans=0
+        user_input ans
+        case "$ans" in
+            0)
+            wget "$sbuild"
+            wget "$source32"
+            sourcef=`echo $sourc32 | sed 's/.*\///'`
+            sbuildf=`echo $sbuild | sed 's/.*\///'`;;
+            1)
+            wget "$sbuild"
+            wget "$source64"
+            sourcef=`echo $sourc64 | sed 's/.*\///'`
+            sbuildf=`echo $sbuild | sed 's/.*\///'`;;
+            2)
+            wget "$sbuild"
+            sbuildf=`echo $sbuild | sed 's/.*\///'`;;
+            3)
+            wget "$source32"
+            sourcef=`echo $sourc32 | sed 's/.*\///'`;;
+            4)
+            wget "$source64"
+            sourcef=`echo $sourc64 | sed 's/.*\///'`;;
+        esac
+    fi
+    if [ -f "$sbuildf" ]; then
+        tar -xf "$sbuildf"
+        rm "$sbuildf"
+        sbuildf=${sbuildf%%.*}
+        if [ -f "$sourcef" ]; then
+            mv "$sourcef" "$sbuildf"
+        fi
+    fi
+}
+
+SLACKWARE_VERSION=14.1
+KEYWORD=$1
+
+if [ ${#KEYWORD} -lt 3 ]; then
+    echo "Keyword too short"
+    exit 0
+fi
+SLACKBUILDS_SEARCH='http://slackbuilds.org/result/?search='$KEYWORD'&sv='$SLACKWARE_VERSION
+
+TMP_FILE=/tmp/sbuild-$$
+
+wget -O $TMP_FILE -q "$SLACKBUILDS_SEARCH"
+
+cat $TMP_FILE | grep "<td><a href=\"/repository/" | sed -e "s/<tr[^>]*>/\n/g" > $TMP_FILE-2
+if [ -s $TMP_FILE-2 ] ; then
+	echo -n "" > $TMP_FILE
+	count=1
+	while read str
+	do
+		name=`echo $str | awk 'BEGIN {FS="</td><td>"} {print $1}' | sed -e "s/<[^>]*>//g"`
+		category=`echo $str | awk 'BEGIN {FS="</td><td>"} {print $2}' | sed -e "s/<[^>]*>//g"`
+		version=`echo $str | awk 'BEGIN {FS="</td><td>"} {print $3}' | sed -e "s/<[^>]*>//g"`
+		url=`echo $str | awk 'BEGIN {FS="</td><td>"} {print $1}' | sed -e 's/.*href="\([^"]*\)".*/\1/g'`
+		if [ ! "$url" == "" ]; then
+			line="$name;$category;$version;$url;$count"
+			echo $line >> $TMP_FILE
+			count=$(($count+1))
+		fi
+	done < $TMP_FILE-2
+
+else
+	result=`cat $TMP_FILE | grep "<p><b>Download SlackBuild"`
+	if [ "$result" != "" ] ; then
+		parse
+	else
+		echo "No result found for '$KEYWORD'"
+    fi
+    rm $TMP_FILE-2
+    rm $TMP_FILE
+    exit 0
+fi
+
+
+
+echo "Search result for '$KEYWORD'"
+echo
+
+count=1
+for str in `cat $TMP_FILE`
+do
+    askagain=1
+    name=`echo $str | awk 'BEGIN {FS=";"} {print $1}'`
+    category=`echo $str | awk 'BEGIN {FS=";"} {print $2}'`
+    version=`echo $str | awk 'BEGIN {FS=";"} {print $3}'`
+    echo "$count. $name $version ($category)"
+    if [ $(($count%10)) -eq 0 ]; then
+        echo
+        choose=0
+        echo -n "Enter a number or 0 to view next page"
+        user_input choose
+        if [ ! "$choose" == "0" ] ; then
+            get_file $choose
+            parse
+            askagain=0
+            break
+        fi
+        echo
+    fi
+    count=$(($count+1))
+done
+
+if [ "$askagain" == "1" ] ; then
+    echo
+    choose=0
+    echo -n "Enter a number or 0 to quit"
+    user_input choose
+    if [ ! "$choose" == "0" ] ; then
+        get_file $choose
+        parse
+    fi
+fi
+rm $TMP_FILE
+echo "Bye"
