@@ -6,7 +6,7 @@ getsbo - the dumb [Slackbuilds.org][] helper
 [Slackbuilds.org]: <http://www.slackbuilds.org>
 
 #### SYNOPSYS
-getsbo <package-name>
+`getsbo <package-name>`
 
 #### DESCRIPTION
 getsbo is a helper script for download a Slackbuild script package from Slackbuilds.org
